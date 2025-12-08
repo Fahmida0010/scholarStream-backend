@@ -298,6 +298,42 @@ app.patch("/users/role/:id", async (req, res) => {
   }
 });
 
+// GET /analytics
+app.get("/analytics", async (req, res) => {
+  try {
+    const totalUsers = await usersCollection.countDocuments();
+    const totalScholarships = await scholarshipCollection.countDocuments();
+    const scholarships = await scholarshipCollection.find().toArray();
+    const totalFees = scholarships.reduce((sum, s) => sum + (s.applicationFees || 0), 0);
+    const applications = await reviewCollection
+      .aggregate([
+        {
+          $group: {
+            _id: "$universityName",
+            applications: { $sum: 1 }
+          }
+        },
+        {
+          $project: {
+            university: "$_id",
+            applications: 1,
+            _id: 0
+          }
+        }
+      ])
+      .toArray();
+
+    res.send({
+      totalUsers,
+      totalScholarships,
+      totalFees,
+      chartData: applications
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ error: "Failed to fetch analytics data" });
+  }
+});
 
      //server run
     app.get("/", (req, res) => {
