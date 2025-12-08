@@ -193,7 +193,7 @@ app.post("/scholarships", async (req, res) => {
   }
 });
 
-// GET all scholarships
+// GET all  scholarships
 app.get("/scholarships", async (req, res) => {
   try {
     const scholarships = await scholarshipCollection.find().toArray();
@@ -213,6 +213,29 @@ app.get("/scholarships/:id", async (req, res) => {
   }
 });
 
+// PUT Update Scholarship
+app.put("/scholarships/:id", async (req, res) => {
+  try {
+    const updated = req.body;
+    const result = await scholarshipCollection.updateOne(
+      { _id: new ObjectId(req.params.id) },
+      { $set: updated }
+    );
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to update scholarship" });
+  }
+});
+
+//  DELETE Scholarship
+app.delete("/scholarships/:id", async (req, res) => {
+  try {
+    const result = await scholarshipCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to delete scholarship" });
+  }
+});
 
 
   //  manageusers page api
