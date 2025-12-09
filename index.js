@@ -1,14 +1,14 @@
 
 const express = require("express");
- const Stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const cors = require("cors");
 const dotenv = require("dotenv");
 dotenv.config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const admin = require("firebase-admin");
 const serviceAccount = require("./serviceKey.json");
 const { ObjectId } = require("mongodb");
-
+ const { verify } = require("crypto");
 
 const port = process.env.PORT || 3000;
 
@@ -31,16 +31,6 @@ app.use(cors({
 );
  app.use(express.json());
 
-// MongoDB Setup
- 
-const uri = process.env.MONGO_URI; 
-const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
-});
 
   // JWT Verify Middleware
 const verifyJWT = async (req, res, next) => {
@@ -55,15 +45,51 @@ const verifyJWT = async (req, res, next) => {
     return res.status(401).send({ message: "Unauthorized Access!", err });
   }
 };
+
+// MongoDB Setup
+ 
+const uri = process.env.MONGO_URI; 
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
+});
+
+// run function
 async function run() {
   try {
 
       await client.connect();
-    console.log("MongoDB Connected Successfully");
     const db = client.db("ScholarStream");
     const usersCollection = db.collection("users");
   const scholarshipCollection = db.collection("scholarships");
    const reviewCollection = db.collection("reviews");
+const applicationsCollection = db.collection("applications");
+
+
+ //role middlewares//
+const verifyADMIN = async(req, res, next) => {
+ const email = req.tokenEmail  
+  const user = await usersCollection.findOne({email})
+if(!user || user?.role!=='admin')
+return res.status(403)
+.send({message:'Admin only Actions!',role:user?.role})
+
+ next()
+}
+
+const verifyMODERATOR = async(req, res, next) => {
+  const email = req.tokenEmail
+  const user = await usersCollection.findOne({email})
+if(!user || user?.role!=='moderator')
+return res.status(403)
+.send({message:'Moderator only Actions!',
+role:user?.role})
+
+ next()
+}
 
    //top scholarships
   app.get("/top-scholarships", async (req, res) => {
@@ -85,25 +111,56 @@ async function run() {
     });
 
 
-    // GET ALL SCHOLARSHIPS with optional search & filter
-    app.get("/scholarships", async (req, res) => {
-      const { search, category, subject, location } = req.query;
-      const query = {};
+    // // GET ALL SCHOLARSHIPS with optional search & filter
+    // app.get("/scholarships", async (req, res) => {
+    //   const { search, category, subject, location } = req.query;
+    //   const query = {};
 
-      if (search) {
-        query.$or = [
-          { scholarshipName: { $regex: search, $options: "i" } },
-          { universityName: { $regex: search, $options: "i" } },
-          { degree: { $regex: search, $options: "i" } },
-        ];
-      }
-      if (category) query.scholarshipCategory = category;
-      if (subject) query.subjectCategory = subject;
-      if (location) query.universityCountry = location;
+    //   if (search) {
+    //     query.$or = [
+    //       { scholarshipName: { $regex: search, $options: "i" } },
+    //       { universityName: { $regex: search, $options: "i" } },
+    //       { degree: { $regex: search, $options: "i" } },
+    //     ];
+    //   }
+    //   if (category) query.scholarshipCategory = category;
+    //   if (subject) query.subjectCategory = subject;
+    //   if (location) query.universityCountry = location;
 
-      const scholarships = await scholarshipCollection.find(query).toArray();
-      res.send(scholarships);
-    });
+    //   const scholarships = await scholarshipCollection.find(query).toArray();
+    //   res.send(scholarships);
+    // });
+
+    // Get scholarships with search, filter, sort, and pagination
+ app.get("/scholarships", async (req, res) => {
+  try {
+    const { search, category, subject, location, sort, page = 1, limit = 6 } = req.query;
+    const query = {};
+
+    if (search) query.universityName = { $regex: search, $options: "i" };
+    if (category) query.scholarshipCategory = category;
+    if (subject) query.subjectCategory = { $regex: subject, $options: "i" };
+    if (location) query.universityCountry = { $regex: location, $options: "i" };
+
+    // Sorting
+    let sortOption = {};
+    if (sort === "date_asc") sortOption.createdAt = 1;
+    else if (sort === "date_desc") sortOption.createdAt = -1;
+    const scholarships = await scholarships.find(query)
+      .sort(sortOption)
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    const total = await scholarships.countDocuments(query);
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({ scholarships, totalPages });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+});
+
 
 // GET reviews for a specific scholarship
 app.get("/scholarships/:id/reviews", async (req, res) => {
@@ -193,15 +250,15 @@ app.post("/scholarships", async (req, res) => {
   }
 });
 
-// GET all  scholarships
-app.get("/scholarships", async (req, res) => {
-  try {
-    const scholarships = await scholarshipCollection.find().toArray();
-    res.send(scholarships);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to fetch scholarships" });
-  }
-});
+ // GET all  scholarships
+// app.get("/scholarships", async (req, res) => {
+//   try {
+//     const scholarships = await scholarshipCollection.find().toArray();
+//     res.send(scholarships);
+//   } catch (error) {
+//     res.status(500).send({ error: "Failed to fetch scholarships" });
+//   }
+// });
 
 // GET single added scholarship
 app.get("/scholarships/:id", async (req, res) => {
@@ -339,7 +396,7 @@ app.get("/analytics", async (req, res) => {
   }
 });
 
-// 1️⃣ GET all applications
+// GET all applications
 app.get("/applications", async (req, res) => {
   try {
     const applications = await Application.find().sort({ applicationDate: -1 });
@@ -349,7 +406,7 @@ app.get("/applications", async (req, res) => {
   }
 });
 
-// 2️⃣ GET single application by ID
+//  GET single application by ID
 app.get("/applications/:id", async (req, res) => {
   try {
     const appData = await Application.findById(req.params.id);
@@ -360,7 +417,7 @@ app.get("/applications/:id", async (req, res) => {
   }
 });
 
- // 5️⃣ DELETE: Reject/delete application
+ //  DELETE: Reject/delete application
 app.delete("/applications/:id", async (req, res) => {
   try {
     const appData = await Application.findByIdAndDelete(req.params.id);
@@ -429,7 +486,7 @@ app.post("/applications/pay/:id", async (req, res) => {
 // 5) ADD REVIEW
 app.post("/reviews", async (req, res) => {
     try {
-        const result = await reviewsCollection.insertOne(req.body);
+        const result = await reviewCollection.insertOne(req.body);
         res.send({ message: "Review added", result });
     } catch (err) {
         res.status(400).send({ message: err.message });
@@ -440,7 +497,7 @@ app.post("/reviews", async (req, res) => {
   // ======================================================
 // 1️⃣ CREATE CHECKOUT SESSION
 // ======================================================
-app.post("/create-checkout-session", async (req, res) => {
+ app.post("/create-checkout-session", async (req, res) => {
     try {
         const { scholarshipName, universityName, applicationFees, userId } = req.body;
 
@@ -460,10 +517,16 @@ app.post("/create-checkout-session", async (req, res) => {
                     quantity: 1,
                 },
             ],
+              metadata: {
+                scholarshipName,
+                universityName,
+                userId,
+                applicationFees
+            },
             success_url: "http://localhost:5173/payment-success?session_id={CHECKOUT_SESSION_ID}",
             cancel_url: "http://localhost:5173/payment-failed?session_id={CHECKOUT_SESSION_ID}",
         });
-
+        
         // Pre-save application (unpaid)
         await applicationsCollection.insertOne({
             userId,
@@ -512,6 +575,45 @@ app.get("/verify-payment/:session_id", async (req, res) => {
         res.status(400).send({ message: err.message });
     }
 });
+
+// save or update a user in db 
+app.post('/users', async(req, res)=> {
+  const userData = req.body
+  userData.created_at = new Date().toISOString()
+  userData.last_loggedIn = new Date().toISOString()
+
+  const query = { email: userData.email }
+
+  const alreadyExists = await usersCollection.findOne({ email: userData.email })
+  console.log('User Already Exists--->', !!alreadyExists)
+
+  if (alreadyExists) {
+    console.log('Updating user info....')
+    const result = await usersCollection.updateOne(query, {
+      $set: {
+        last_loggedIn: new Date().toISOString(),
+        role: 'student'
+      },
+    })
+    return res.send(result)
+  }
+
+  // role assign for new user
+  userData.role = 'student'
+
+  console.log('Saving new user Info....')
+  const result = await usersCollection.insertOne(userData)
+  res.send(result)
+})
+
+// get a users role //
+app.get('/user/role/:email',verifyJWT, async(req, res) => {
+
+  const result = await usersCollection
+  .findOne({ email: req.tokenEmail })
+  res.send({ role: result?.role })
+})
+
 
      //server run
     app.get("/", (req, res) => {
