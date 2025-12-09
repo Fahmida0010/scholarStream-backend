@@ -304,7 +304,9 @@ app.get("/analytics", async (req, res) => {
     const totalUsers = await usersCollection.countDocuments();
     const totalScholarships = await scholarshipCollection.countDocuments();
     const scholarships = await scholarshipCollection.find().toArray();
-    const totalFees = scholarships.reduce((sum, s) => sum + (s.applicationFees || 0), 0);
+    const totalFees = scholarships.reduce((sum, s) =>
+       sum + (Number(s.applicationFees) || 0), 0
+      );
     const applications = await reviewCollection
       .aggregate([
         {
@@ -332,6 +334,38 @@ app.get("/analytics", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).send({ error: "Failed to fetch analytics data" });
+  }
+});
+
+// 1️⃣ GET all applications
+app.get("/applications", async (req, res) => {
+  try {
+    const applications = await Application.find().sort({ applicationDate: -1 });
+    res.json(applications);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 2️⃣ GET single application by ID
+app.get("/applications/:id", async (req, res) => {
+  try {
+    const appData = await Application.findById(req.params.id);
+    if (!appData) return res.status(404).json({ message: "Application not found" });
+    res.json(appData);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+ // 5️⃣ DELETE: Reject/delete application
+app.delete("/applications/:id", async (req, res) => {
+  try {
+    const appData = await Application.findByIdAndDelete(req.params.id);
+    if (!appData) return res.status(404).json({ message: "Application not found" });
+    res.json({ message: "Application rejected/deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
