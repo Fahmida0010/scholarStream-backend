@@ -1,5 +1,6 @@
 
 const express = require("express");
+ const Stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const cors = require("cors");
 const dotenv = require("dotenv");
 dotenv.config();
@@ -9,16 +10,15 @@ const serviceAccount = require("./serviceKey.json");
 const { ObjectId } = require("mongodb");
 
 
-const app = express();
 const port = process.env.PORT || 3000;
 
- 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
 
 // Middlewares
+const app = express();
 app.use(cors({
     origin: [
       "http://localhost:5173",
@@ -29,7 +29,7 @@ app.use(cors({
     credentials: true,
   })
 );
-app.use(express.json());
+ app.use(express.json());
 
 // MongoDB Setup
  
@@ -436,6 +436,82 @@ app.post("/reviews", async (req, res) => {
     }
 });
 
+
+  // ======================================================
+// 1️⃣ CREATE CHECKOUT SESSION
+// ======================================================
+app.post("/create-checkout-session", async (req, res) => {
+    try {
+        const { scholarshipName, universityName, applicationFees, userId } = req.body;
+
+        // Create Stripe Checkout Session
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
+            mode: "payment",
+            line_items: [
+                {
+                    price_data: {
+                        currency: "usd",
+                        product_data: {
+                            name: `${scholarshipName} - ${universityName}`,
+                        },
+                        unit_amount: applicationFees * 100,
+                    },
+                    quantity: 1,
+                },
+            ],
+            success_url: "http://localhost:5173/payment-success?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url: "http://localhost:5173/payment-failed?session_id={CHECKOUT_SESSION_ID}",
+        });
+
+        // Pre-save application (unpaid)
+        await applicationsCollection.insertOne({
+            userId,
+            scholarshipName,
+            universityName,
+            applicationFees,
+            applicationStatus: "pending",
+            paymentStatus: "unpaid",
+            stripeSessionId: session.id
+        });
+
+        res.send({ url: session.url });
+    } catch (err) {
+        res.status(500).send({ message: err.message });
+    }
+});
+
+// ======================================================
+// 2️⃣ VERIFY PAYMENT STATUS (USED IN SUCCESS/FAILED PAGE)
+// ======================================================
+app.get("/verify-payment/:session_id", async (req, res) => {
+    try {
+        const session = await stripe.checkout.sessions.retrieve(req.params.session_id);
+        const paid = session.payment_status === "paid";
+
+        if (paid) {
+            await applicationsCollection.updateOne(
+                { stripeSessionId: session.id },
+                {
+                    $set: {
+                        paymentStatus: "paid",
+                        applicationStatus: "completed"
+                    }
+                }
+            );
+        }
+
+        res.send({
+            paid,
+            amountPaid: session.amount_total / 100,
+            scholarshipName: session.metadata?.scholarshipName,
+            universityName: session.metadata?.universityName
+        });
+
+    } catch (err) {
+        res.status(400).send({ message: err.message });
+    }
+});
 
      //server run
     app.get("/", (req, res) => {
