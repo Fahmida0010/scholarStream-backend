@@ -205,8 +205,10 @@ app.get("/scholarships", async (req, res) => {
 
 // GET single added scholarship
 app.get("/scholarships/:id", async (req, res) => {
+  console.log(req.params.id)
   try {
     const scholarship = await scholarshipCollection.findOne({ _id: new ObjectId(req.params.id) });
+    console.log("scholarships", scholarship)
     res.send(scholarship);
   } catch (error) {
     res.status(500).send({ error: "Failed to fetch scholarship" });
@@ -368,6 +370,72 @@ app.delete("/applications/:id", async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+ // 1) GET ALL APPLICATIONS
+app.get("/applications", async (req, res) => {
+    try {
+        const apps = await applicationsCollection.find().toArray();
+        res.send(apps);
+    } catch (err) {
+        res.status(500).send({ message: err.message });
+    }
+});
+
+// 2) UPDATE APPLICATION (edit)
+app.put("/applications/:id", async (req, res) => {
+    try {
+        const result = await applicationsCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: req.body }
+        );
+        res.send({ message: "Application updated", result });
+    } catch (err) {
+        res.status(400).send({ message: err.message });
+    }
+});
+
+// 3) DELETE APPLICATION
+app.delete("/applications/:id", async (req, res) => {
+    try {
+        const result = await applicationsCollection.deleteOne({
+            _id: new ObjectId(req.params.id)
+        });
+        res.send({ message: "Application deleted", result });
+    } catch (err) {
+        res.status(400).send({ message: err.message });
+    }
+});
+
+// 4) PAYMENT UPDATE
+app.post("/applications/pay/:id", async (req, res) => {
+    try {
+        const result = await applicationsCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { 
+                $set: { 
+                    paymentStatus: "paid",
+                    applicationStatus: "completed"
+                } 
+            }
+        );
+        res.send({ message: "Payment Success", result });
+    } catch (err) {
+        res.status(400).send({ message: err.message });
+    }
+});
+
+
+
+// 5) ADD REVIEW
+app.post("/reviews", async (req, res) => {
+    try {
+        const result = await reviewsCollection.insertOne(req.body);
+        res.send({ message: "Review added", result });
+    } catch (err) {
+        res.status(400).send({ message: err.message });
+    }
+});
+
 
      //server run
     app.get("/", (req, res) => {
