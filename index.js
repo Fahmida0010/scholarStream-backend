@@ -464,6 +464,40 @@ app.delete("/applications/:id", async (req, res) => {
     }
 });
 
+// GET all reviews
+app.get("/reviews", async (req, res) => {
+    try {
+        const result = await reviewCollection.find().toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: "Failed to fetch reviews", error });
+    }
+});
+// GET reviews by scholarshipId
+app.get("/reviews/:scholarshipId", async (req, res) => {
+    try {
+        const id = req.params.scholarshipId;
+        const result = await reviewCollection.find({ scholarshipId: id }).toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: "Failed to fetch reviews", error });
+    }
+});
+
+// DELETE review by ID
+app.delete("/reviews/:id", async (req, res) => {
+    try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await reviewCollection.deleteOne(query);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: "Failed to delete review", error });
+    }
+});
+
+
+
 // 4) PAYMENT UPDATE
 app.post("/applications/pay/:id", async (req, res) => {
     try {
