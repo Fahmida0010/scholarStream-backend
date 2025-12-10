@@ -62,6 +62,7 @@ async function run() {
   try {
 
       await client.connect();
+      console.log("Mongodb is running successfully")
     const db = client.db("ScholarStream");
     const usersCollection = db.collection("users");
   const scholarshipCollection = db.collection("scholarships");
@@ -606,13 +607,20 @@ app.post('/users', async(req, res)=> {
   res.send(result)
 })
 
-// get a users role //
-app.get('/user/role/:email',verifyJWT, async(req, res) => {
 
-  const result = await usersCollection
-  .findOne({ email: req.tokenEmail })
-  res.send({ role: result?.role })
-})
+// user role
+app.get("/users/role/:email", async (req, res) => {
+  const email = req.params.email;
+
+  const user = await usersCollection.findOne({ email });
+
+  if (!user) {
+    return res.send({ role: "student" }); // default
+  }
+
+  res.send({ role: user.role });
+});
+
 
 
      //server run
