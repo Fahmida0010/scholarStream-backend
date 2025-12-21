@@ -69,7 +69,7 @@ async function run() {
     const applicationsCollection = db.collection("applications");
 
 
-     //role middlewares//
+     //role middlewares
     const verifyADMIN = async (req, res, next) => {
       const email = req.tokenEmail
       const user = await usersCollection.findOne({ email })
@@ -120,14 +120,12 @@ async function run() {
     // GET: All reviews for a specific university by universityName
 app.get("/reviews/university/:universityName", async (req, res) => {
   const { universityName } = req.params;
-
-  // Decode if needed (in case of special characters)
   const decodedName = decodeURIComponent(universityName);
 
   try {
     const universityReviews = await reviewCollection
       .find({ universityName: decodedName })
-      .sort({ reviewDate: -1 }) // latest reviews first
+      .sort({ reviewDate: -1 }) 
       .toArray();
 
     res.send(universityReviews);
@@ -434,7 +432,7 @@ app.delete("/reviews/:id", verifyJWT, verifyMODERATOR, async (req, res) => {
     res.status(500).send({ message: "Failed to delete review" });
   }
 });
-    // 4) PAYMENT success
+    //  PAYMENT success
     app.post("/applications/pay/:id", async (req, res) => {
       try {
         const result = await applicationsCollection.updateOne(
@@ -460,8 +458,6 @@ app.delete("/reviews/:id", verifyJWT, verifyMODERATOR, async (req, res) => {
           address, subjectCategory, userEmail, scholarshipCategory,
           userName 
          } = req.body;
-
-        // Create Stripe Checkout Session
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ["card"],
           mode: "payment",
@@ -471,7 +467,6 @@ app.delete("/reviews/:id", verifyJWT, verifyMODERATOR, async (req, res) => {
                 currency: "usd",
                 product_data: {
                   name: `${scholarshipName} - ${universityName}`,
-                   //images: [image], 
                 },
                 unit_amount: applicationFees * 100,
               },
@@ -707,7 +702,7 @@ app.get("/manage-details/:id", async (req, res) => {
 
 
 
-// ================= GET MY APPLICATIONS =================
+//GET MY APPLICATIONS 
 app.get("/myapplications", verifyJWT, async (req, res) => {
   const email = req.query.email;
   if (!email) return res.status(400).send({ message: "Email is required" });
@@ -724,7 +719,7 @@ app.get("/myapplications", verifyJWT, async (req, res) => {
   }
 });
 
-// ================= ADD NEW APPLICATION =================
+// ADD NEW APPLICATION
 app.post("/myapplications", async (req, res) => {
   const data = req.body;
 
@@ -750,7 +745,7 @@ app.post("/myapplications", async (req, res) => {
   }
 });
 
-// ================= UPDATE APPLICATION =================
+// UPDATE APPLICATION 
 app.put("/myapplications/:id",verifyJWT, async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
@@ -770,7 +765,7 @@ app.put("/myapplications/:id",verifyJWT, async (req, res) => {
   }
 });
 
-// ================= DELETE APPLICATION =================
+//DELETE APPLICATION
 app.delete("/myapplications/:id",verifyJWT, async (req, res) => {
   const { id } = req.params;
 
@@ -787,7 +782,7 @@ app.delete("/myapplications/:id",verifyJWT, async (req, res) => {
 });
 
  
-// ================= GET SINGLE APPLICATION =================
+//GET SINGLE APPLICATION 
 app.get("/application/:id", async (req, res) => {
   const { id } = req.params;
   try {
