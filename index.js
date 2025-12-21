@@ -45,9 +45,6 @@ const verifyJWT = async (req, res, next) => {
   }
 };
 
-
-
-
 // MongoDB Setup
 
 const uri = process.env.MONGO_URI;
@@ -120,49 +117,114 @@ async function run() {
         res.status(500).send({ error: "Failed to fetch scholarship" });
       }
     });
+    // GET: All reviews for a specific university by universityName
+app.get("/reviews/university/:universityName", async (req, res) => {
+  const { universityName } = req.params;
 
+  // Decode if needed (in case of special characters)
+  const decodedName = decodeURIComponent(universityName);
 
-    // GET SINGLE SCHOLARSHIP DETAILS 
-    app.get("/scholarships/:id", async (req, res) => {
-      const id = req.params.id;
-      const result = await scholarshipCollection.findOne({
-        _id: new ObjectId(id),
-      });
-      res.send(result);
-    });
+  try {
+    const universityReviews = await reviewCollection
+      .find({ universityName: decodedName })
+      .sort({ reviewDate: -1 }) // latest reviews first
+      .toArray();
 
+    res.send(universityReviews);
+  } catch (error) {
+    console.error("Error fetching university reviews:", error);
+    res.status(500).send({ message: "Failed to fetch reviews" });
+  }
+});
 
-    // Get All scholarships with search, filter, sort, and pagination
-    app.get("/scholarships", async (req, res) => {
-      try {
-        const { search, category, subject, location, sort, page = 1, limit = 6 } = req.query;
-        const query = {};
-        console.log(search)
-        if (search) query.universityName = { $regex: search, $options: "i" };
-        if (category) query.scholarshipCategory = category;
-        if (subject) query.subjectCategory = { $regex: subject, $options: "i" };
-        if (location) query.universityCountry = { $regex: location, $options: "i" };
-        console.log(query)
-        // Sorting
-        let sortOption = {};
-        if (sort === "fee_asc") sortOption.applicationFees = 1;
-        else if (sort === "fee_desc") sortOption.applicationFees = -1;
-        const scholarshipsData = await scholarshipCollection.find(query)
-          .sort(sortOption)
-          .skip((page - 1) * limit)
-          .limit(Number(limit))
-          .toArray();
+   
 
-        const total = await scholarshipCollection.countDocuments(query);
-        const totalPages = Math.ceil(total / limit);
+  // Get All scholarships with search, filter, sort, and pagination
+app.get("/scholarships", async (req, res) => {
+  try {
+    const {
+      search,
+      category,
+      subject,
+      location,
+      sort,
+      page = 1,
+      limit = 6
+    } = req.query;
 
-        res.json({ scholarships: scholarshipsData, totalPages });
-      } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Server Error" });
+    const query = {};
+
+    // scholarshipName, universityName, degree, city, country
+    if (search) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+
+      query.$or = [
+        { scholarshipName: searchRegex },
+        { universityName: searchRegex },
+        { degree: searchRegex },
+        { city: searchRegex },
+        { country: searchRegex }
+      ];
+    }
+
+    //  Category Filter
+    if (category) {
+      query.scholarshipCategory = category;
+    }
+
+    // Subject Category Filter
+    if (subject) {
+      query.subjectCategory = { $regex: subject.trim(), $options: "i" };
+    }
+
+    //  Location Filter (city OR country)
+    if (location) {
+      const locationRegex = { $regex: location.trim(), $options: "i" };
+      if (query.$or) {
+        query.$and = [
+          { $or: query.$or }, 
+          {
+            $or: [
+              { city: locationRegex },
+              { country: locationRegex }
+            ]
+          }
+        ];
+        delete query.$or; 
+      } else {
+        query.$or = [
+          { city: locationRegex },
+          { country: locationRegex }
+        ];
       }
-    });
+    }
 
+    console.log("Final Query:", query);
+
+    // Sorting
+    let sortOption = {};
+    if (sort === "fee_asc") sortOption.applicationFees = 1;
+    else if (sort === "fee_desc") sortOption.applicationFees = -1;
+
+    const scholarshipsData = await scholarshipCollection
+      .find(query)
+      .sort(sortOption)
+      .skip((page - 1) * Number(limit))
+      .limit(Number(limit))
+      .toArray();
+
+    const total = await scholarshipCollection.countDocuments(query);
+    const totalPages = Math.ceil(total / Number(limit));
+
+    res.json({
+      scholarships: scholarshipsData,
+      totalPages
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+});
 
     // Add scholarship
     app.post("/scholarships",  verifyJWT, verifyADMIN, async (req, res) => {
@@ -332,7 +394,7 @@ async function run() {
     });
   
     // GET all reviews
-    app.get("/reviews", async (req, res) => {
+    app.get("/reviews", verifyJWT,verifyMODERATOR, async (req, res) => {
       try {
         const result = await reviewCollection.find().toArray();
         res.send(result);
@@ -351,6 +413,27 @@ async function run() {
       }
     });
 
+    
+// DELETE a review from all review
+app.delete("/reviews/:id", verifyJWT, verifyMODERATOR, async (req, res) => {
+  const { id } = req.params;
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid review ID" });
+  }
+
+  try {
+    const result = await reviewCollection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount > 0) {
+      res.send({ deletedCount: result.deletedCount });
+    } else {
+      res.status(404).send({ message: "Review not found" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to delete review" });
+  }
+});
     // 4) PAYMENT success
     app.post("/applications/pay/:id", async (req, res) => {
       try {
@@ -369,13 +452,12 @@ async function run() {
       }
     });
 
-   
 
     // CREATE CHECKOUT SESSION
     app.post("/create-checkout-session", async (req, res) => {
       try {
         const { scholarshipName, universityName, applicationFees,
-          address, subjectCategory, userEmail,
+          address, subjectCategory, userEmail, scholarshipCategory,
           userName 
          } = req.body;
 
@@ -400,9 +482,11 @@ async function run() {
             scholarshipName,
             universityName,
             userEmail,
+            userName,
             applicationFees,
             address,
-            subjectCategory
+            subjectCategory,
+            scholarshipCategory
           
           },
           success_url: `${process.env.CLIENT_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
@@ -412,14 +496,17 @@ async function run() {
         // Pre-save application (unpaid)
         await applicationsCollection.insertOne({
           userEmail,
+          userName,
+          address,
           scholarshipName,
+          scholarshipCategory,
+          subjectCategory,
           universityName,
           applicationFees,
           applicationStatus: "pending",
           paymentStatus: "unpaid",
           stripeSessionId: session.id,
-          userName,
-          address
+                   
         });
 
         res.send({ url: session.url });
@@ -427,7 +514,6 @@ async function run() {
         res.status(500).send({ message: err.message });
       }
     });
-
 
     
     // VERIFY PAYMENT STATUS (USED IN SUCCESS/FAILED PAGE)
@@ -517,10 +603,12 @@ async function run() {
     // ADD REVIEW student panel
     app.post("/reviews", async (req, res) => {
       try {
-        const { applicationId, ratingPoint, reviewComment, universityName, scholarshipName } = req.body;
+        const { applicationId, ratingPoint, reviewComment, 
+          universityName,userEmail, scholarshipName, userName, userImage } = req.body;
          console.log(req.body)
 
-        if (!applicationId || !ratingPoint || !reviewComment || !universityName || !scholarshipName) {
+        if (!applicationId || !ratingPoint || !reviewComment || 
+          !universityName || !scholarshipName ) {
           return res.status(400).json({ message: "All fields are required" });
         }
 
@@ -537,6 +625,9 @@ async function run() {
           reviewComment,
           universityName,
           scholarshipName,
+          userEmail,
+          userName,
+          userImage : userImage,
           createdAt: new Date(),
         });
 
@@ -557,25 +648,6 @@ async function run() {
         res.status(500).send({ message: err.message });
       }
     });
-  //   //manage application
-  //   app.get("/applications",verifyJWT, async (req, res) => {
-  //     const applications = await applicationsCollection.find().toArray();
-  //     res.send(applications);
-  //   });
-  //   app.get("/manage-application/:id", async (req, res) => {
-  //     const id = req.params.id;
-  //     const application = await scholarshipCollection.findOne({
-  //       _id: new ObjectId(id),
-  //     });
-  //     res.send(scholarships);
-  //   });
-   
-  // res.send({
-  //   ...application,
-  //   address: scholarships.country,
-  //   category: scholarships.subjectCategory,
-  // });
-
 
     // update manage application
     app.patch("/manage-application/:id", async (req, res) => {
@@ -590,17 +662,41 @@ async function run() {
       res.send(result);
     });
 
+    // manage details
+app.get("/manage-details/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid application id" });
+  }
+
+  try {
+    const application = await applicationsCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!application) {
+      return res.status(404).send({ message: "Application not found" });
+    }
+
+    res.send(application);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Server error" });
+  }
+});
+
+
     // feedback
     app.post("/feedback/:id", async (req, res) => {
       const id = req.params.id;
-      const { feedbackText, adminEmail } = req.body;
+      const { feedbackText, moderatorEmail } = req.body;
 
       const result = await applicationsCollection.updateOne(
         { _id: new ObjectId(id) },
         {
           $set: {
             feedback: feedbackText,
-            feedbackBy: adminEmail,
+           feedbackBy: moderatorEmail,
             feedbackDate: new Date(),
           },
         }
@@ -612,7 +708,7 @@ async function run() {
 
 
 // ================= GET MY APPLICATIONS =================
-app.get("/myapplications", async (req, res) => {
+app.get("/myapplications", verifyJWT, async (req, res) => {
   const email = req.query.email;
   if (!email) return res.status(400).send({ message: "Email is required" });
 
@@ -655,7 +751,7 @@ app.post("/myapplications", async (req, res) => {
 });
 
 // ================= UPDATE APPLICATION =================
-app.put("/myapplications/:id", async (req, res) => {
+app.put("/myapplications/:id",verifyJWT, async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
 
@@ -675,7 +771,7 @@ app.put("/myapplications/:id", async (req, res) => {
 });
 
 // ================= DELETE APPLICATION =================
-app.delete("/myapplications/:id", async (req, res) => {
+app.delete("/myapplications/:id",verifyJWT, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -706,8 +802,8 @@ app.get("/application/:id", async (req, res) => {
 });
 
     //  GET my reviews
-    app.get("/myreviews", async (req, res) => {
-      const email = req.query.email;
+    app.get("/myreviews", verifyJWT,  async(req, res) => {
+   const email = req.tokenEmail
       console.log(email)
 
       if (!email) {
@@ -782,60 +878,6 @@ app.get("/application/:id", async (req, res) => {
 
 
 
-// // ================= GET SINGLE APPLICATION =================
-// app.get("/myapplications/:id", async (req, res) => {
-//   const { id } = req.params;
-
-//   try {
-//     const application = await applicationsCollection.findOne({ _id: new ObjectId(id) });
-//     if (!application) {
-//       return res.status(404).send({ message: "Application not found" });
-//     }
-
-//     res.send(application);
-//   } catch (error) {
-//     console.error("Error fetching application:", error);
-//     res.status(500).send({ message: "Failed to fetch application", error });
-//   }
-// });
-
-// // ================= UPDATE APPLICATION =================
-// app.put("/myapplications/:id", async (req, res) => {
-//   const { id } = req.params;
-//   const { universityName, universityAddress, 
-//   subjectCategory, applicationFees } = req.body;
-
-//   if (!universityName || !universityAddress || !subjectCategory || !applicationFees) {
-//     return res.status(400).send({ message: "All fields are required" });
-//   }
-
-//   try {
-//     const result = await applicationsCollection.updateOne(
-//       { _id: new ObjectId(id) },
-//       {
-//         $set: {
-//           universityName,
-//           universityAddress,
-//           subjectCategory,
-//           applicationFees,
-//           updatedAt: new Date(),
-//         },
-//       }
-//     );
-
-//     if (result.matchedCount === 0) {
-//       return res.status(404).send({ message: "Application not found" });
-//     }
-
-//     res.send({
-//       success: true,
-//       message: "Application updated successfully",
-//     });
-//   } catch (error) {
-//     console.error("Error updating application:", error);
-//     res.status(500).send({ message: "Failed to update application", error });
-//   }
-// });
 
     //server run
     app.get("/", (req, res) => {
