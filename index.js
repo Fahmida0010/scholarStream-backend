@@ -1,34 +1,36 @@
 const express = require("express")
 const cors = require("cors");
-const dotenv = require("dotenv");
-dotenv.config();
-const admin = require("firebase-admin");
-const serviceAccount = require("./serviceKey.json");
-const { ObjectId } = require("mongodb");
-const { verify } = require("crypto");
-
+require("dotenv").config()
+const { MongoClient, ServerApiVersion } = require("mongodb");
+const app = express();
 const port = process.env.PORT || 3000;
+const { ObjectId } = require("mongodb");
+const admin = require("firebase-admin");
+
+const decoded= Buffer.from(process.env.FB_SERVICE_KEY, "base64")
+.toString ("utf8");
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 // Middlewares
-const app = express();
 app.use(cors({
   origin: [
     "http://localhost:5173",
     "http://localhost:5174",
-    "https://scholarstream-30de1.web.app"
+    "https://scholarstream-30de1.web.app",
+     "https://cheerful-beijinho-1ae898.netlify.app"
 
   ],
   credentials: true,
 })
 );
-app.use(express.json());
+ app.use(express.json());
 
 
  // JWT Verify Middleware
@@ -45,6 +47,7 @@ const verifyJWT = async (req, res, next) => {
   }
 };
 
+
 // MongoDB Setup
 
 const uri = process.env.MONGO_URI;
@@ -60,7 +63,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
 
-    await client.connect();
+  
     console.log("Mongodb is running successfully")
     const db = client.db("ScholarStream");
     const usersCollection = db.collection("users");
@@ -884,9 +887,10 @@ app.get("/application/:id", async (req, res) => {
   }
 }
 
-run().catch(console.dir);
+ run().catch(console.dir);
 
 
-app.listen(port, () => {
+ app.listen(port, () => {
   console.log(` Server is running on port: ${port}`);
 });
+
