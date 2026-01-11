@@ -3,3 +3,4 @@ Admin_Email:	tasni@gmail.com
 Admin_Password : Tasni25@#
 Moderator_Email :	diana@gmail.com
 Moderator_Password:Diana25@# 
+Frontend Repository Link : https://github.com/Fahmida0010/ScholarStream-frontend-.git
