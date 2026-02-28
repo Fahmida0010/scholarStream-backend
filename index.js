@@ -70,6 +70,56 @@ async function run() {
     const scholarshipCollection = db.collection("scholarships");
     const reviewCollection = db.collection("reviews");
     const applicationsCollection = db.collection("applications");
+    const blogCollection = db.collection("blogs");
+     const servicesCollection = db.collection("services");
+
+
+// ✅ Statistics endpoint
+app.get("/api/statistics", async (req, res) => {
+  try {
+    const usersCount = await usersCollection.countDocuments();
+    const scholarshipsCount = await scholarshipCollection.countDocuments();
+    const reviewsCount = await reviewCollection.countDocuments();
+    const applicationsCount = await applicationsCollection.countDocuments();
+
+    res.json({
+      users: usersCount,
+      scholarships: scholarshipsCount,
+      reviews: reviewsCount,
+      applications: applicationsCount,
+    });
+  } catch (error) {
+    console.error("Error fetching statistics:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+     // GET all services
+    app.get("/services", async (req, res) => {
+      const result = await servicesCollection.find().toArray();
+      res.send(result);
+    });
+    app.post("/services", async (req, res) => {
+      const newService = req.body;
+      const result = await servicesCollection.insertOne(newService);
+      res.send(result);
+    });
+
+
+ ///blogs
+    app.get("/api/blog", async (req, res) => {
+  const category = req.query.category;
+
+  const query = category ? { category } : {};
+
+  const blogs = await blogCollection
+    .find(query)
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.json(blogs);
+});
+   
+
 
 
      //role middlewares
@@ -95,8 +145,7 @@ async function run() {
 
       next()
     }
-
-   
+    
     //top scholarships
     app.get("/top-scholarships", async (req, res) => {
       const result = await scholarshipCollection
@@ -570,10 +619,8 @@ app.delete("/reviews/:id", verifyJWT, verifyMODERATOR, async (req, res) => {
 
 
     // user Role setting
-    app.get('/user/role/:email',verifyJWT ,async (req, res) => {
+    app.get('/user/role/:email', verifyJWT, async (req, res) => {
       const requestedEmail = req.params.email;
-
-      // Security: Ensure the user is requesting their own role (or is admin)
       if (req.tokenEmail !== requestedEmail) {
         return res.status(403).send({ message: 'Forbidden' });
       }
