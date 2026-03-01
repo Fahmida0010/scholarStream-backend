@@ -218,35 +218,37 @@ app.get("/api/statistics", async (req, res) => {
   }
 });
 
-// LOGIN
+
+// LOGIN with Firebase Token
 app.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: "No token provided" });
+    }
+
+    // Verify Firebase ID Token
+    const decoded = await admin.auth().verifyIdToken(token);
+    const email = decoded.email;
+
+    // Find user in database
     const user = await usersCollection.findOne({ email });
-    
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ success: false, message: "Invalid password" });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found in DB" });
+    }
 
-    // ✅ Generate JWT token
-    const token = jwt.sign(
-      { email: user.email, role: user.role }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: "1h" }
-    );
-
-    console.log("Generated Token:", token); // ✅ Quick check in backend console
-
-    res.send({ 
-      success: true, 
-      userId: user._id, 
-      token, // send token to frontend
+    res.send({
+      success: true,
+      userId: user._id,
+      role: user.role,
       message: "Login successful"
     });
+
   } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).send({ message: error.message });
+    console.error("Firebase login error:", error);
+    res.status(401).json({ success: false, message: "Invalid Firebase token" });
   }
 });
 
@@ -254,7 +256,7 @@ app.post("/login", async (req, res) => {
 //user role email
 app.get('/user/role/:email', verifyJWT, async (req, res) => {
   const requestedEmail = req.params.email;
-  
+   console.log(requestedEmail)
   if (req.tokenEmail !== requestedEmail) {
     return res.status(403).send({ message: 'Forbidden' });
   }
@@ -263,6 +265,7 @@ app.get('/user/role/:email', verifyJWT, async (req, res) => {
   if (!result) {
     return res.status(404).send({ message: 'User not found' });
   }
+  console.log(result.role)
 
   res.send({ role: result.role || 'student' });
 });
