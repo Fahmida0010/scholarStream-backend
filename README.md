@@ -1,8 +1,8 @@
 website live link : https://cheerful-beijinho-1ae898.netlify.app
 Admin_Email:	tasni@gmail.com
-Admin_Password : Tasni25@#
+Admin_Password : Tasni26@#
 Moderator_Email :	diana@gmail.com
-Moderator_Password:Diana25@# 
+Moderator_Password:Diana26@# 
 Frontend Repository Link : https://github.com/Fahmida0010/ScholarStream-frontend-.git
 
 
