@@ -1,11 +1,14 @@
 const express = require("express")
 const cors = require("cors");
+ const bcrypt = require("bcrypt");
+ const jwt = require("jsonwebtoken");
 require("dotenv").config()
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 const { ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
+
 
 const decoded= Buffer.from(process.env.FB_SERVICE_KEY, "base64")
 .toString ("utf8");
@@ -41,6 +44,7 @@ const verifyJWT = async (req, res, next) => {
   try {
     const decoded = await admin.auth().verifyIdToken(token);
     req.tokenEmail = decoded.email;
+      req.userRole = decoded.role; 
     next();
   } catch (err) {
     return res.status(401).send({ message: "Unauthorized Access!", err });
@@ -62,8 +66,6 @@ const client = new MongoClient(uri, {
 // run function
 async function run() {
   try {
-
-  
     console.log("Mongodb is running successfully")
     const db = client.db("ScholarStream");
     const usersCollection = db.collection("users");
@@ -71,10 +73,59 @@ async function run() {
     const reviewCollection = db.collection("reviews");
     const applicationsCollection = db.collection("applications");
     const blogCollection = db.collection("blogs");
-     const servicesCollection = db.collection("services");
+    const servicesCollection = db.collection("services");
+    const contactCollection = db.collection("Contact"); 
+
+    
+    // POST Route Save Contact Data
+    app.post("/api/contact", async (req, res) => {
+      try {
+        const { name, email, message } = req.body;
+        if (!name || !email || !message) {
+          return res.status(400).json({
+            success: false,
+            message: "All fields are required",
+          });
+        }
+
+        const newContact = {
+          name,
+          email,
+          message,
+          createdAt: new Date(),
+        };
+
+        await contactCollection.insertOne(newContact);
+
+        res.status(201).json({
+          success: true,
+          message: "Message sent successfully!",
+        });
+
+      } catch (error) {
+        console.error("Error saving contact:", error);
+        res.status(500).json({
+          success: false,
+          message: "Server error",
+        });
+      }
+    });
+
+    // GET all messages (optional, for admin dashboard)
+    app.get("/api/contact", async (req, res) => {
+      try {
+        const messages = await contactCollection.find().sort({ createdAt: -1 }).toArray();
+        res.status(200).json(messages);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch messages" });
+      }
+    });
 
 
-// ✅ Statistics endpoint
+
+
+
+//  Statistics endpoint
 app.get("/api/statistics", async (req, res) => {
   try {
     const usersCount = await usersCollection.countDocuments();
@@ -145,8 +196,91 @@ app.get("/api/statistics", async (req, res) => {
 
       next()
     }
+
+ //users create
+ app.post("/users", async (req, res) => {
+  try {
+    const newUser = req.body;
+
+    const exists = await usersCollection.findOne({ email: newUser.email });
+    if (exists) {
+      return res.status(400).send({ message: "User already exists" });
+    }
+
+    newUser.role = "student";
+    newUser.password = await bcrypt.hash(newUser.password, 10);
+
+    const result = await usersCollection.insertOne(newUser);
+    res.status(201).send({ success: true, message: "User created", data: result });
+  } catch (error) {
+    console.error("Error creating user:", error);
+    res.status(500).send({ error: "User creation failed" });
+  }
+});
+
+// LOGIN
+app.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await usersCollection.findOne({ email });
     
-    //top scholarships
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(401).json({ success: false, message: "Invalid password" });
+
+    // ✅ Generate JWT token
+    const token = jwt.sign(
+      { email: user.email, role: user.role }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: "1h" }
+    );
+
+    console.log("Generated Token:", token); // ✅ Quick check in backend console
+
+    res.send({ 
+      success: true, 
+      userId: user._id, 
+      token, // send token to frontend
+      message: "Login successful"
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).send({ message: error.message });
+  }
+});
+
+
+//user role email
+app.get('/user/role/:email', verifyJWT, async (req, res) => {
+  const requestedEmail = req.params.email;
+  
+  if (req.tokenEmail !== requestedEmail) {
+    return res.status(403).send({ message: 'Forbidden' });
+  }
+
+  const result = await usersCollection.findOne({ email: requestedEmail });
+  if (!result) {
+    return res.status(404).send({ message: 'User not found' });
+  }
+
+  res.send({ role: result.role || 'student' });
+});
+
+
+    //update a user's role
+    app.patch('/update-role', verifyJWT,verifyADMIN, async (req, res) => {
+      const { email, role } = req.body
+      const result = await usersCollection.updateOne({ email },
+        { $set: { role } })
+      await sellerRequestsCollection.deleteOne({ email })
+
+      res.send(result)
+    })
+
+
+  //Top scholarships 
+  
     app.get("/top-scholarships", async (req, res) => {
       const result = await scholarshipCollection
         .find()
@@ -385,24 +519,7 @@ app.get("/scholarships", async (req, res) => {
       }
     });
 
-    //create users
-    app.post("/users", verifyJWT, async (req, res) => {
-      const newUser = req.body;
 
-      try {
-        const exists = await usersCollection.findOne({ email: newUser.email });
-
-        if (exists) {
-          return res.send({ message: "User already exists" });
-        }
-        newUser.role = "student";
-
-        const result = await usersCollection.insertOne(newUser);
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ error: "User creation failed" });
-      }
-    });
 
     // GET /analytics
     app.get("/analytics",  verifyJWT, verifyADMIN, async (req, res) => {
@@ -592,58 +709,6 @@ app.delete("/reviews/:id", verifyJWT, verifyMODERATOR, async (req, res) => {
         res.status(400).send({ message: err.message });
       }
     });
-
-    // save or update a user
-    app.post('/users', async (req, res) => {
-      const userData = req.body;
-      if (!userData?.email) return res.status(400).send({ message: 'Email missing!' });
-
-      userData.created_at = new Date().toISOString();
-      userData.last_loggedIn = new Date().toISOString();
-
-      const alreadyExists = await usersCollection.findOne({ email: userData.email });
-
-      if (alreadyExists) {
-        const result = await usersCollection.updateOne(
-          { email: userData.email },
-          { $set: { last_loggedIn: new Date().toISOString(), role: 'student' } }
-        );
-        return res.send({ updated: true, result });
-      }
-
-      // new user
-      userData.role = 'student';
-      const result = await usersCollection.insertOne(userData);
-      res.send({ insertedId: result.insertedId });
-    });
-
-
-    // user Role setting
-    app.get('/user/role/:email', verifyJWT, async (req, res) => {
-      const requestedEmail = req.params.email;
-      if (req.tokenEmail !== requestedEmail) {
-        return res.status(403).send({ message: 'Forbidden' });
-      }
-
-      const result = await usersCollection.findOne({ email: requestedEmail });
-
-      if (!result) {
-        return res.status(404).send({ message: 'User not found' });
-      }
-
-      res.send({ role: result.role || 'student' });
-    });
-    //update a user's role
-    app.patch('/update-role', verifyJWT,verifyADMIN, async (req, res) => {
-      const { email, role } = req.body
-      const result = await usersCollection.updateOne({ email },
-        { $set: { role } })
-      await sellerRequestsCollection.deleteOne({ email })
-
-      res.send(result)
-    })
-
-
 
     // ADD REVIEW student panel
     app.post("/reviews", async (req, res) => {
