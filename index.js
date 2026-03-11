@@ -282,16 +282,24 @@ app.get('/user/role/:email', verifyJWT, async (req, res) => {
     })
 
 
-  //Top scholarships 
-  
-    app.get("/top-scholarships", async (req, res) => {
-      const result = await scholarshipCollection
-        .find()
-        .sort({ applicationFees: 1, scholarshipPostDate: -1 })
-        .limit(6)
-        .toArray();
-      res.send(result);
-    });
+// //top scholarships
+app.get("/top-scholarships", async (req, res) => {
+  try {
+    const { limit = 4 } = req.query;
+
+    const result = await scholarshipCollection
+      .find({ scholarshipCategory: "Full Fund" })
+      .sort({ postDate: -1 })
+      .limit(Number(limit))
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch scholarships" });
+  }
+});
+ 
+
 
     app.get("/scholarships/:id", async (req, res) => {
 
@@ -336,7 +344,7 @@ app.get("/scholarships", async (req, res) => {
       location,
       sort,
       page = 1,
-      limit = 6
+      limit = 8
     } = req.query;
 
     const query = {};
@@ -412,6 +420,7 @@ app.get("/scholarships", async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 });
+
 
     // Add scholarship
     app.post("/scholarships",  verifyJWT, verifyADMIN, async (req, res) => {
